@@ -1,0 +1,53 @@
+.dashboard-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease-in-out;
+  height: 100%;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-5px);
+}
+
+.card-header {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1a237e;
+}
+
+.card-content {
+  padding: 24px;
+}
+
+.form-field {
+  margin-bottom: 16px;
+}
+
+.action-button {
+  background-color: #1a237e;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  text-transform: none;
+  font-weight: 600;
+}
+
+.action-button:hover {
+  background-color: #0d1657;
+}
+
+@media (max-width: 600px) {
+  .dashboard-card {
+    border-radius: 12px;
+  }
+
+  .card-content {
+    padding: 16px;
+  }
+}

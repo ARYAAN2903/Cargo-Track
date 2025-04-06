@@ -1,0 +1,16 @@
+{
+  "name": "cargo-shipping-blockchain",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "start": "cd client && npm start"
+  },
+  "dependencies": {
+    "fs-extra": "^11.1.1",
+    "hardhat": "^2.19.5"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0"
+  }
+}
