@@ -41,7 +41,7 @@ const getDisabledStatuses = (currentStatus) => {
   return usedStatuses;
 };
 
-const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionStatus }) => {
+const CargoTrackingCard = ({ contract, cargoContract, escrowContract, account, setTransactionStatus }) => {
   const [isCarrier, setIsCarrier] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -60,17 +60,23 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
 
     try {
       const shipmentCount = await cargoContract.getShipmentCount();
-      console.log('Total shipments:', shipmentCount.toString());
-
       const carrierShipments = [];
+
       for (let i = 1; i <= shipmentCount; i++) {
         try {
           const shipment = await cargoContract.shipments(i);
           if (shipment.carrier.toLowerCase() === account.toLowerCase()) {
-            // Get order details to get supplier and manufacturer info
             const order = await contract.orders(shipment.orderId);
             const supplier = await contract.suppliers(order.supplier);
             const manufacturer = await contract.manufacturers(order.manufacturer);
+            
+            // Get both payment types
+            const payment = await escrowContract.payments(i);
+            const orderPayment = await escrowContract.orderPayments(shipment.orderId);
+
+            // Calculate the actual carrier fee from the order amount
+            const orderAmount = Number(order.quantity) * Number(order.pricePerUnit);
+            const carrierFee = orderAmount * 0.05; // 5% carrier fee
 
             carrierShipments.push({
               shipmentId: i,
@@ -86,7 +92,15 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
               isCustomsCleared: shipment.isCustomsCleared,
               partType: Number(order.partType),
               quantity: Number(order.quantity),
-              pricePerUnit: order.pricePerUnit.toString()
+              pricePerUnit: order.pricePerUnit.toString(),
+              paymentStatus: {
+                isPaid: orderPayment.amount > 0 || payment.amount > 0,
+                isReleased: orderPayment.released || payment.released,
+                isRefunded: orderPayment.refunded || payment.refunded,
+                carrierFee: orderPayment.released || payment.released ? 
+                           carrierFee.toString() : // Show actual fee when released
+                           ethers.utils.formatEther(orderPayment.carrierFee || payment.carrierFee) // Show pending fee
+              }
             });
           }
         } catch (error) {
@@ -101,7 +115,7 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
       console.error('Error fetching shipments:', error);
       setError('Failed to load shipments');
     }
-  }, [isCarrier, cargoContract, contract, account]);
+  }, [isCarrier, cargoContract, contract, escrowContract, account]);
 
   // Check carrier status
   useEffect(() => {
@@ -165,54 +179,98 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
     );
   };
 
-  // Update the handleCustomsUpdate function
-  const handleCustomsUpdate = async (isCleared) => {
-    if (!updatingShipment || !cargoContract) {
-      setError('Invalid shipment or contract not initialized');
-      return;
+  // Add payment status chip component
+  const getPaymentStatusChip = (paymentStatus) => {
+    if (paymentStatus.isRefunded) {
+      return <Chip label="Refunded" color="error" size="small" />;
     }
-  
+    if (paymentStatus.isReleased) {
+      return (
+        <Box>
+          <Chip label="Payment Released ✓" color="success" size="small" />
+          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+            Received: {Number(paymentStatus.carrierFee).toFixed(4)} ETH
+          </Typography>
+        </Box>
+      );
+    }
+    if (paymentStatus.isPaid) {
+      return (
+        <Box>
+          <Chip label="Paid (In Escrow)" color="primary" size="small" />
+          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+            Pending: {Number(paymentStatus.carrierFee).toFixed(4)} ETH
+          </Typography>
+        </Box>
+      );
+    }
+    return <Chip label="Unpaid" color="warning" size="small" />;
+  };
+
+  // Add this helper function after getPaymentStatusChip
+  const getTransactionDetails = (paymentStatus) => {
+    if (paymentStatus.isReleased) {
+      return (
+        <Box>
+          <Typography variant="body2" color="success.main">
+            Fee Received: {Number(paymentStatus.carrierFee).toFixed(4)} ETH
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            (5% of order value)
+          </Typography>
+        </Box>
+      );
+    }
+    if (paymentStatus.isPaid) {
+      return (
+        <Box>
+          <Typography variant="body2" color="info.main">
+            Pending Fee: {Number(paymentStatus.carrierFee).toFixed(4)} ETH
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Will be released on delivery
+          </Typography>
+        </Box>
+      );
+    }
+    return (
+      <Typography variant="body2" color="text.secondary">
+        No transaction yet
+      </Typography>
+    );
+  };
+
+  // Update the handleCustomsUpdate function
+  const handleCustomsUpdate = async () => {
     try {
       setUpdating(true);
       setError(null);
-      
-      // Configure gas settings
-      const txOptions = {
-        gasLimit: ethers.utils.hexlify(3000000),
-        from: account,
-        gasPrice: await cargoContract.provider.getGasPrice()
-      };
   
-      // Update customs status first
+      // First update customs status
       const customsTx = await cargoContract.updateCustomsStatus(
         updatingShipment.shipmentId,
-        true, // isCleared
+        true,
         "Customs verification complete ✓",
-        txOptions
+        { from: account }
       );
-  
       await customsTx.wait();
   
-      // Then update shipment status to Customs Cleared
-      const statusTx = await cargoContract.updateShipmentStatus(
+      // Then update to Delivered status with final location
+      const deliveryTx = await cargoContract.updateShipmentStatus(
         updatingShipment.shipmentId,
-        3, // CustomsCleared status
-        updatingShipment.currentLocation,
-        txOptions
+        3, // Delivered status
+        updatingShipment.finalLocation, // Use final destination
+        { from: account }
       );
+      await deliveryTx.wait();
   
-      await statusTx.wait();
-      
-      // Show success message
-      setTransactionStatus('Customs cleared successfully ✓');
-      
-      // Refresh data and close modal
       await fetchShipments();
       setIsUpdateModalOpen(false);
+      setTransactionStatus('Delivery completed successfully ✓');
   
     } catch (error) {
-      console.error('Customs update error:', error);
-      setError(`Failed to update customs status: ${error.message}`);
+      console.error('Update error:', error);
+      setError(error.message);
     } finally {
       setUpdating(false);
     }
@@ -317,6 +375,8 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
                     <TableCell>From (Supplier)</TableCell>
                     <TableCell>To (Manufacturer)</TableCell>
                     <TableCell>Status</TableCell>
+                    <TableCell>Payment Status</TableCell>
+                    <TableCell>Fee Transaction</TableCell>
                     <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -340,19 +400,27 @@ const CargoTrackingCard = ({ contract, cargoContract, account, setTransactionSta
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           {getStatusChip(shipment.status)}
-                          <Button
-                            variant="contained"
-                            size="small"
-                            onClick={() => {
-                              setUpdatingShipment(shipment);
-                              setNewLocation(shipment.currentLocation);
-                              setNewStatus(shipment.status);
-                              setIsUpdateModalOpen(true);
-                            }}
-                          >
-                            Update
-                          </Button>
+                          {shipment.status !== 3 && (  // Only show button if not delivered
+                            <Button
+                              variant="contained"
+                              size="small"
+                              onClick={() => {
+                                setUpdatingShipment(shipment);
+                                setNewLocation(shipment.currentLocation);
+                                setNewStatus(shipment.status);
+                                setIsUpdateModalOpen(true);
+                              }}
+                            >
+                              Update
+                            </Button>
+                          )}
                         </Box>
+                      </TableCell>
+                      <TableCell>
+                        {getPaymentStatusChip(shipment.paymentStatus)}
+                      </TableCell>
+                      <TableCell>
+                        {getTransactionDetails(shipment.paymentStatus)}
                       </TableCell>
                       <TableCell>
                         <Button

@@ -17,23 +17,6 @@ const ManufacturerTable = ({ contract }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const getPartTypes = (authorizedParts = []) => {
-    if (!Array.isArray(authorizedParts) || authorizedParts.length === 0) {
-      return 'None';
-    }
-    
-    return authorizedParts
-      .map(part => {
-        switch(Number(part)) {
-          case 0: return 'Engine';
-          case 1: return 'Transmission';
-          case 2: return 'Brake Assembly';
-          default: return 'Unknown';
-        }
-      })
-      .join(', ');
-  };
-
   useEffect(() => {
     const fetchManufacturers = async () => {
       if (!contract) {
@@ -55,23 +38,21 @@ const ManufacturerTable = ({ contract }) => {
             const manufacturer = await contract.manufacturers(manufacturerAddress);
             console.log('Raw manufacturer data:', manufacturer);
 
-            // Check if manufacturer exists and has required fields
             if (manufacturer && manufacturer.name && manufacturer.isRegistered) {
-              // Get authorized parts directly from the event args
-              const authorizedParts = event.args[2] ? 
-                event.args[2].map(part => Number(part)) : 
-                [];
-
-              console.log('Processed manufacturer:', {
-                address: manufacturerAddress,
-                name: manufacturer.name,
-                authorizedParts: authorizedParts
+              // Format the registration date
+              const date = new Date(manufacturer.registrationDate.toNumber() * 1000);
+              const formattedDate = date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
               });
 
               manufacturersArray.push({
                 address: manufacturerAddress,
                 name: manufacturer.name,
-                authorizedParts: authorizedParts
+                registrationDate: formattedDate
               });
             }
           } catch (err) {
@@ -120,7 +101,7 @@ const ManufacturerTable = ({ contract }) => {
           <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
             <TableCell>Address</TableCell>
             <TableCell>Name</TableCell>
-            <TableCell>Authorized Parts</TableCell>
+            <TableCell>Registration Date</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -129,7 +110,7 @@ const ManufacturerTable = ({ contract }) => {
               <TableRow key={index}>
                 <TableCell>{manufacturer.address}</TableCell>
                 <TableCell>{manufacturer.name}</TableCell>
-                <TableCell>{getPartTypes(manufacturer.authorizedParts)}</TableCell>
+                <TableCell>{manufacturer.registrationDate}</TableCell>
               </TableRow>
             ))
           ) : (

@@ -47,10 +47,19 @@ const CarrierTable = ({ cargoContract }) => {
               const carrierData = await cargoContract.carriers(address);
               
               if (carrierData.isRegistered) {
+                const date = new Date(Number(carrierData.registrationDate) * 1000);
+                const formattedDate = date.toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+
                 carriersMap.set(address, {
                   address: address,
                   name: carrierData.name,
-                  registrationDate: new Date(Number(carrierData.registrationDate) * 1000).toLocaleDateString()
+                  registrationDate: formattedDate
                 });
               }
             } catch (err) {
@@ -71,10 +80,19 @@ const CarrierTable = ({ cargoContract }) => {
           if (!carriersMap.has(address)) {
             const carrierData = await cargoContract.carriers(address);
             if (carrierData.isRegistered) {
+              const date = new Date(Number(carrierData.registrationDate) * 1000);
+              const formattedDate = date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              });
+
               const newCarrier = {
                 address: address,
                 name: carrierData.name,
-                registrationDate: new Date(Number(carrierData.registrationDate) * 1000).toLocaleDateString()
+                registrationDate: formattedDate
               };
               setCarriers(prev => [...prev, newCarrier]);
               carriersMap.set(address, newCarrier);

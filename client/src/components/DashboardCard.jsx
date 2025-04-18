@@ -8,7 +8,9 @@ const DashboardCard = ({ title, description, route, icon }) => {
   return (
     <Card
       sx={{
-        width: '400px', // Fixed width for all cards
+        width: '90%', // Changed from fixed 400px to 90% of container
+        minWidth: '400px', // Add minimum width
+        maxWidth: '800px', // Add maximum width to prevent too wide cards
         height: '200px',
         display: 'flex',
         flexDirection: 'column',
@@ -22,7 +24,7 @@ const DashboardCard = ({ title, description, route, icon }) => {
         borderRadius: 2,
         boxShadow: 3,
         color: 'white',
-        margin: '0 auto', // Center the card
+        margin: '0 auto', // Keep center alignment
       }}
       onClick={() => navigate(route)}
     >

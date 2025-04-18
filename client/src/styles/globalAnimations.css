@@ -1,0 +1,58 @@
+/* Base transitions for all elements */
+* {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Fade in animation for page load */
+@keyframes pageLoad {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Apply to body to affect all page content */
+body {
+  animation: pageLoad 0.5s ease-out;
+}
+
+/* General hover effects */
+button,
+a,
+.interactive-element {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover,
+a:hover,
+.interactive-element:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Smooth page transitions */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+.page-transition-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity 0.3s, transform 0.3s;
+}

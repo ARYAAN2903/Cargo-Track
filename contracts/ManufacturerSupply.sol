@@ -18,15 +18,15 @@ contract ManufacturerSupply {
 
     struct Manufacturer {
         string name;
-        uint8[] authorizedParts;
         bool isRegistered;
+        uint256 registrationDate;  // Added registration date
     }
 
     struct Supplier {
-        bool isRegistered;      // index 0
-        string name;           // index 1
-        uint256[3] partPrices; // index 2
-        uint256 registrationDate; // index 3
+        bool isRegistered;
+        string name;
+        uint256[3] partPrices;  // Prices stored directly in ETH
+        uint256 registrationDate;
     }
 
     mapping(address => Manufacturer) public manufacturers;
@@ -38,8 +38,7 @@ contract ManufacturerSupply {
 
     event ManufacturerRegistered(
         address indexed manufacturerAddress,
-        string name,
-        uint8[] authorizedParts
+        string name
     );
 
     event SupplierRegistered(
@@ -50,38 +49,37 @@ contract ManufacturerSupply {
 
     function registerManufacturer(
         address _manufacturerAddress,
-        string memory _name,
-        uint8[] memory _authorizedParts
+        string memory _name
     ) public onlyOwner {
         require(_manufacturerAddress != address(0), "Invalid manufacturer address");
         require(bytes(_name).length > 0, "Name cannot be empty");
-        require(_authorizedParts.length > 0, "Must authorize at least one part");
         require(!manufacturers[_manufacturerAddress].isRegistered, "Manufacturer already registered");
-
-        for(uint i = 0; i < _authorizedParts.length; i++) {
-            require(_authorizedParts[i] <= MAX_PART_TYPE, "Invalid part type");
-        }
 
         manufacturers[_manufacturerAddress] = Manufacturer({
             name: _name,
-            authorizedParts: _authorizedParts,
-            isRegistered: true
+            isRegistered: true,
+            registrationDate: block.timestamp  // Set registration date
         });
 
         manufacturerAddresses.push(_manufacturerAddress);
         manufacturerCount++;
 
-        emit ManufacturerRegistered(_manufacturerAddress, _name, _authorizedParts);
+        emit ManufacturerRegistered(_manufacturerAddress, _name);
     }
 
     function registerSupplier(
         address _supplier, 
         string memory _name,
-        uint256[3] memory _partPrices
+        uint256[3] memory _partPrices  // ETH prices
     ) public onlyOwner {
         require(_supplier != address(0), "Invalid supplier address");
         require(!suppliers[_supplier].isRegistered, "Supplier already registered");
-        require(_partPrices[0] > 0 && _partPrices[1] > 0 && _partPrices[2] > 0, "Invalid prices");
+        
+        // Validate ETH prices
+        for(uint8 i = 0; i < 3; i++) {
+            require(_partPrices[i] > 0, "Price must be greater than 0");
+            require(_partPrices[i] <= 1000, "Price cannot exceed 1000 ETH");
+        }
         
         suppliers[_supplier] = Supplier({
             isRegistered: true,
@@ -111,6 +109,19 @@ contract ManufacturerSupply {
 
     function getManufacturerCount() public view returns (uint256) {
         return manufacturerAddresses.length;
+    }
+
+    function getManufacturerDetails(address _manufacturer) public view returns (
+        string memory name,
+        bool isRegistered,
+        uint256 registrationDate
+    ) {
+        Manufacturer storage manufacturer = manufacturers[_manufacturer];
+        return (
+            manufacturer.name,
+            manufacturer.isRegistered,
+            manufacturer.registrationDate
+        );
     }
 
     enum OrderStatus {
@@ -158,16 +169,6 @@ contract ManufacturerSupply {
         uint256 fixedPrice = suppliers[_supplier].partPrices[_partType];
         require(fixedPrice > 0, "Part price not set by supplier");
 
-        bool isAuthorized = false;
-        uint8[] memory authorizedParts = manufacturers[msg.sender].authorizedParts;
-        for(uint i = 0; i < authorizedParts.length; i++) {
-            if(authorizedParts[i] == _partType) {
-                isAuthorized = true;
-                break;
-            }
-        }
-        require(isAuthorized, "Not authorized for this part type");
-
         orderCount++;
         orders[orderCount] = Order({
             manufacturer: msg.sender,
@@ -206,5 +207,24 @@ contract ManufacturerSupply {
 
     function getOrderCount() public view returns (uint256) {
         return orderCount;
+    }
+
+    function getOrderDetails(uint256 _orderId) public view returns (
+        address manufacturer,
+        address supplier,
+        uint8 partType,
+        uint256 quantity,
+        uint256 pricePerUnit,
+        OrderStatus status
+    ) {
+        Order storage order = orders[_orderId];
+        return (
+            order.manufacturer,
+            order.supplier,
+            order.partType,
+            order.quantity,
+            order.pricePerUnit,
+            order.status
+        );
     }
 }

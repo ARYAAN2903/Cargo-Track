@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -12,7 +12,9 @@ import {
   MenuItem,
   Box,
   Alert,
-  CircularProgress
+  CircularProgress,
+  FormHelperText,
+  Typography
 } from '@mui/material';
 import { ethers } from 'ethers';
 
@@ -30,7 +32,9 @@ const CreateShipmentModal = ({
   cargoContract,
   onShipmentCreated,
   account,
-  contract
+  contract,
+  ordersWithShipments = [], // Add default empty array
+  handleShipmentCreation
 }) => {
   const [carrier, setCarrier] = useState('');
   const [transportMode, setTransportMode] = useState(0);
@@ -39,6 +43,56 @@ const CreateShipmentModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [carriers, setCarriers] = useState([]);
+  const [loadingCarriers, setLoadingCarriers] = useState(true);
+
+  const getOrderStatus = (status) => {
+    switch (Number(status)) {
+      case OrderStatus.Pending:
+        return 'Pending';
+      case OrderStatus.Accepted:
+        return 'Accepted';
+      case OrderStatus.ReadyForShipment:
+        return success ? 'Shipment Created' : 'Ready for Shipment';
+      case OrderStatus.Rejected:
+        return 'Rejected';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  useEffect(() => {
+    const fetchCarriers = async () => {
+      if (!cargoContract) return;
+      
+      try {
+        setLoadingCarriers(true);
+        const carrierCount = await cargoContract.carrierCount();
+        const fetchedCarriers = [];
+        
+        for (let i = 0; i < carrierCount; i++) {
+          const carrierAddress = await cargoContract.carrierAddresses(i);
+          const carrier = await cargoContract.carriers(carrierAddress);
+          
+          if (carrier.isRegistered) {
+            fetchedCarriers.push({
+              address: carrierAddress,
+              name: carrier.name
+            });
+          }
+        }
+        
+        setCarriers(fetchedCarriers);
+      } catch (error) {
+        console.error('Error fetching carriers:', error);
+        setError('Failed to load carriers');
+      } finally {
+        setLoadingCarriers(false);
+      }
+    };
+
+    fetchCarriers();
+  }, [cargoContract]);
 
   // Update the initiateShipment function
   const initiateShipment = async () => {
@@ -166,21 +220,38 @@ const CreateShipmentModal = ({
           </Alert>
         )}
 
-        {!canCreateShipment(order) ? (
+        {!canCreateShipment(order) && !success ? (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Order must be in Ready for Shipment state to create a shipment.
-            Current Status: {order ? order.status : 'Unknown'}
+            Order must be accepted to create a shipment.
+            Current Status: {order ? getOrderStatus(order.status) : 'Unknown'}
           </Alert>
         ) : (
           <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              label="Carrier Address"
-              value={carrier}
-              onChange={(e) => setCarrier(e.target.value)}
-              fullWidth
-              required
-              placeholder="0x..."
-            />
+            <FormControl fullWidth required>
+              <InputLabel>Select Carrier</InputLabel>
+              <Select
+                value={carrier}
+                label="Select Carrier"
+                onChange={(e) => setCarrier(e.target.value)}
+                disabled={loadingCarriers}
+                sx={{ textAlign: 'left' }}
+              >
+                {loadingCarriers ? (
+                  <MenuItem disabled>Loading carriers...</MenuItem>
+                ) : carriers.length === 0 ? (
+                  <MenuItem disabled>No registered carriers found</MenuItem>
+                ) : (
+                  carriers.map((carrier) => (
+                    <MenuItem key={carrier.address} value={carrier.address}>
+                      {carrier.name} ({carrier.address.slice(0, 6)}...{carrier.address.slice(-4)})
+                    </MenuItem>
+                  ))
+                )}
+              </Select>
+              <FormHelperText>
+                {loadingCarriers ? 'Loading carriers...' : 'Select a registered carrier'}
+              </FormHelperText>
+            </FormControl>
 
             <FormControl fullWidth required>
               <InputLabel>Transport Mode</InputLabel>
@@ -217,14 +288,46 @@ const CreateShipmentModal = ({
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancel</Button>
         {canCreateShipment(order) && (
-          <Button 
-            onClick={handleCreateShipment} 
-            variant="contained"
-            disabled={loading || !carrier || !initialLocation || !finalLocation}
-            color="primary"
-          >
-            {loading ? <CircularProgress size={24} /> : 'Create Shipment'}
-          </Button>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {Array.isArray(ordersWithShipments) && !ordersWithShipments.includes(order?.id) ? (
+              <Button
+                variant="contained"
+                onClick={handleCreateShipment}
+                disabled={loading || !carrier || !initialLocation || !finalLocation}
+                sx={{
+                  backgroundColor: '#000000',
+                  '&:hover': {
+                    backgroundColor: '#333333',
+                  },
+                  color: '#ffffff',
+                  textTransform: 'none',
+                  fontSize: '0.875rem',
+                  py: 0.5,
+                  px: 3,
+                  minWidth: '140px',
+                  height: '32px'
+                }}
+              >
+                {loading ? (
+                  <CircularProgress size={20} color="inherit" />
+                ) : (
+                  'Create Shipment'
+                )}
+              </Button>
+            ) : (
+              <Typography 
+                variant="body2" 
+                color="success.main" 
+                sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  gap: 1
+                }}
+              >
+                ✓ Shipment Created
+              </Typography>
+            )}
+          </Box>
         )}
       </DialogActions>
     </Dialog>

@@ -14,6 +14,7 @@ import ManufacturerTable from '../tables/ManufacturerTable';
 import SupplierTable from '../tables/SupplierTable';
 import CarrierTable from '../tables/CarrierTable';
 import { ethers } from 'ethers';
+import heroBackground from '../../assets/images/automotive.jpg'; // Import the background image
 
 const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransactionStatus, onManufacturerRegistered }) => {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -25,9 +26,9 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
 
   const [manufacturerAddress, setManufacturerAddress] = useState('');
   const [name, setName] = useState('');
-  const [selectedParts, setSelectedParts] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [manufacturerRegistrationStatus, setManufacturerRegistrationStatus] = useState('');
 
   const [supplierAddress, setSupplierAddress] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -42,14 +43,16 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
   const [brakeAssemblyPrice, setBrakeAssemblyPrice] = useState('');
 
   const handleRegisterManufacturer = async () => {
-    if (!manufacturerAddress || !name || selectedParts.length === 0) {
+    if (!manufacturerAddress || !name) {
       setError('Please fill all required fields');
+      setManufacturerRegistrationStatus('error');
       return;
     }
 
     try {
       setLoading(true);
       setError('');
+      setManufacturerRegistrationStatus('pending');
       
       // Validate address format
       if (!ethers.utils.isAddress(manufacturerAddress)) {
@@ -58,18 +61,13 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
 
       console.log('Registering manufacturer with params:', {
         address: manufacturerAddress,
-        name: name,
-        parts: selectedParts
+        name: name
       });
-
-      // Convert parts array to uint8 array
-      const partsArray = selectedParts.map(part => Number(part));
 
       // Estimate gas first
       const gasEstimate = await contract.estimateGas.registerManufacturer(
         manufacturerAddress,
-        name,
-        partsArray
+        name
       );
 
       console.log('Estimated gas:', gasEstimate.toString());
@@ -80,7 +78,6 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       const tx = await contract.registerManufacturer(
         manufacturerAddress,
         name,
-        partsArray,
         {
           gasLimit: gasLimit
         }
@@ -94,7 +91,7 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       // Clear form on success
       setManufacturerAddress('');
       setName('');
-      setSelectedParts([]);
+      setManufacturerRegistrationStatus('success');
       
       // Trigger refresh of manufacturer list
       if (onManufacturerRegistered) {
@@ -116,6 +113,7 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       }
       
       setError(errorMessage);
+      setManufacturerRegistrationStatus('error');
     } finally {
       setLoading(false);
     }
@@ -133,16 +131,27 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       setTransactionStatus('pending');
       setSupplierRegistrationStatus('pending');
 
+      // Convert ETH prices to Wei for smart contract
+      const enginePriceInEth = enginePrice;
+      const transmissionPriceInEth = transmissionPrice;
+      const brakeAssemblyPriceInEth = brakeAssemblyPrice;
+
+      // Set a high gas limit for the transaction
+      const gasLimit = ethers.BigNumber.from('500000'); // Adjust this value as needed
+
       const transaction = await contract.registerSupplier(
         supplierAddress,
         supplierName,
-        [enginePrice, transmissionPrice, brakeAssemblyPrice]
+        [enginePriceInEth, transmissionPriceInEth, brakeAssemblyPriceInEth],
+        {
+          gasLimit: gasLimit
+        }
       );
+
       await transaction.wait();
 
       setTransactionStatus('confirmed');
       setSupplierRegistrationStatus('success');
-      console.log("Supplier registered successfully!");
 
       // Reset form
       setSupplierAddress('');
@@ -151,9 +160,18 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       setTransmissionPrice('');
       setBrakeAssemblyPrice('');
     } catch (error) {
+      console.error("Error registering supplier:", error);
       setTransactionStatus('failed');
       setSupplierRegistrationStatus('error');
-      console.error("Error registering supplier:", error);
+      
+      // Add better error handling
+      let errorMessage = 'Failed to register supplier: ';
+      if (error.reason) {
+        errorMessage += error.reason;
+      } else if (error.message) {
+        errorMessage += error.message;
+      }
+      setError(errorMessage);
     }
   };
 
@@ -203,7 +221,27 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
   };
 
   return (
-    <Box sx={{ maxWidth: '800px', margin: '0 auto' }}>
+    <Box sx={{ 
+      maxWidth: '800px', 
+      margin: '0 auto',
+      position: 'relative',
+      padding: '2rem',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundImage: `url(${heroBackground})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        opacity: 0.15, // Reduced opacity for better readability
+        zIndex: -1,
+        borderRadius: '8px'
+      }
+    }}>
       {!isAdmin ? (
         <Alert severity="error" sx={{ mb: 2 }}>
           Only admin (Account #0) can register new actors. Please switch to admin account.
@@ -215,15 +253,25 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
       ) : (
         <>
           {/* Manufacturer Registration Card */}
-          <Card sx={{ mb: 4 }}>
+          <Card sx={{ 
+            mb: 4, 
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(5px)'
+          }}>
             <CardContent>
               <Typography variant="h5" gutterBottom sx={{ color: '#1a237e' }}>
                 Register Manufacturer
               </Typography>
 
-              {error && (
+              {manufacturerRegistrationStatus === 'error' && (
                 <Alert severity="error" sx={{ mb: 2 }}>
-                  {error}
+                  {error || 'Please fill all required fields.'}
+                </Alert>
+              )}
+
+              {manufacturerRegistrationStatus === 'success' && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Manufacturer registered successfully!
                 </Alert>
               )}
 
@@ -246,67 +294,20 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
                 />
               </Box>
 
-              <Typography variant="subtitle1" gutterBottom>
-                Authorized Parts
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', mb: 3 }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={selectedParts.includes(0)}
-                      onChange={(e) => {
-                        const updatedParts = e.target.checked
-                          ? [...selectedParts, 0]
-                          : selectedParts.filter(part => part !== 0);
-                        setSelectedParts(updatedParts);
-                      }}
-                      name="engine"
-                    />
-                  }
-                  label="Engine"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={selectedParts.includes(1)}
-                      onChange={(e) => {
-                        const updatedParts = e.target.checked
-                          ? [...selectedParts, 1]
-                          : selectedParts.filter(part => part !== 1);
-                        setSelectedParts(updatedParts);
-                      }}
-                      name="transmission"
-                    />
-                  }
-                  label="Transmission"
-                />
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={selectedParts.includes(2)}
-                      onChange={(e) => {
-                        const updatedParts = e.target.checked
-                          ? [...selectedParts, 2]
-                          : selectedParts.filter(part => part !== 2);
-                        setSelectedParts(updatedParts);
-                      }}
-                      name="brakeAssembly"
-                    />
-                  }
-                  label="Brake Assembly"
-                />
-              </Box>
-
               <Button 
                 variant="contained" 
-                color="primary" 
                 onClick={handleRegisterManufacturer}
                 fullWidth
                 size="large"
                 sx={{
                   textTransform: 'none',
                   fontSize: '1.1rem',
-                  py: 1.5
+                  py: 1.5,
+                  backgroundColor: '#000000', // Black background
+                  '&:hover': {
+                    backgroundColor: '#333333', // Slightly lighter black on hover
+                  },
+                  color: '#ffffff' // White text
                 }}
                 disabled={loading}
               >
@@ -316,7 +317,11 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
           </Card>
 
           {/* Supplier Registration Card */}
-          <Card sx={{ mb: 4 }}>
+          <Card sx={{ 
+            mb: 4, 
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(5px)'
+          }}>
             <CardContent>
               <Typography variant="h5" gutterBottom sx={{ color: '#1a237e' }}>
                 Register Supplier
@@ -359,6 +364,12 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
                   value={enginePrice}
                   onChange={(e) => setEnginePrice(e.target.value)}
                   required
+                  inputProps={{ 
+                    step: "0.0001",
+                    min: "0",
+                    max: "1000" // Add max value constraint
+                  }}
+                  helperText="Enter price in ETH (0-1000 ETH)"
                 />
                 <TextField
                   label="Transmission Price (ETH)"
@@ -368,6 +379,11 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
                   value={transmissionPrice}
                   onChange={(e) => setTransmissionPrice(e.target.value)}
                   required
+                  inputProps={{ 
+                    step: "0.0001",
+                    min: "0"
+                  }}
+                  helperText="Enter price in ETH"
                 />
                 <TextField
                   label="Brake Assembly Price (ETH)"
@@ -377,19 +393,28 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
                   value={brakeAssemblyPrice}
                   onChange={(e) => setBrakeAssemblyPrice(e.target.value)}
                   required
+                  inputProps={{ 
+                    step: "0.0001",
+                    min: "0"
+                  }}
+                  helperText="Enter price in ETH"
                 />
               </Box>
 
               <Button 
-                variant="contained" 
-                color="primary" 
+                variant="contained"
                 onClick={handleRegisterSupplier}
                 fullWidth
                 size="large"
                 sx={{
                   textTransform: 'none',
                   fontSize: '1.1rem',
-                  py: 1.5
+                  py: 1.5,
+                  backgroundColor: '#000000',
+                  '&:hover': {
+                    backgroundColor: '#333333',
+                  },
+                  color: '#ffffff'
                 }}
               >
                 Register Supplier
@@ -398,7 +423,11 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
           </Card>
 
           {/* Carrier Registration Card */}
-          <Card sx={{ mb: 4 }}>
+          <Card sx={{ 
+            mb: 4, 
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(5px)'
+          }}>
             <CardContent>
               <Typography variant="h5" gutterBottom sx={{ color: '#1a237e' }}>
                 Register Carrier
@@ -436,15 +465,19 @@ const ManufacturerSupplyCard = ({ contract, cargoContract, account, setTransacti
               </Box>
 
               <Button 
-                variant="contained" 
-                color="primary" 
+                variant="contained"
                 onClick={handleRegisterCarrier}
                 fullWidth
                 size="large"
                 sx={{
                   textTransform: 'none',
                   fontSize: '1.1rem',
-                  py: 1.5
+                  py: 1.5,
+                  backgroundColor: '#000000',
+                  '&:hover': {
+                    backgroundColor: '#333333',
+                  },
+                  color: '#ffffff'
                 }}
               >
                 Register Carrier

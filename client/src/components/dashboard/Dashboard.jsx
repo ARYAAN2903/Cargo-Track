@@ -2,12 +2,14 @@ import React from 'react';
 import { Grid, Container, Typography, Box } from '@mui/material';
 import { Factory, LocalShipping, Timeline, Payment, ShoppingCart, Assignment } from '@mui/icons-material';
 import DashboardCard from '../DashboardCard';
+import HeroSection from './HeroSection';
+import About from '../about/About';
 
-const Dashboard = () => {
+const Dashboard = ({ account }) => {
   const firstRowItems = [
     {
-      title: 'Register Manufacturer',
-      description: 'Register and manage manufacturer details',
+      title: 'Register Stakeholders',
+      description: 'Register and manage stakeholders',
       route: '/manufacturer',
       icon: <Factory sx={{ color: '#fff' }} />
     },
@@ -16,37 +18,40 @@ const Dashboard = () => {
       description: 'Create and manage supply orders',
       route: '/create-order',
       icon: <ShoppingCart sx={{ color: '#fff' }} />
-    },
-    {
-      title: 'Supplier Dashboard',
-      description: 'Manage orders, quality checks and shipments',
-      route: '/supplier',
-      icon: <Assignment sx={{ color: '#fff' }} />
     }
   ];
 
   const secondRowItems = [
     {
+      title: 'Supplier Dashboard',
+      description: 'Manage orders, quality checks and shipments',
+      route: '/supplier',
+      icon: <Assignment sx={{ color: '#fff' }} />
+    },
+    {
       title: 'Cargo Tracking',
       description: 'Track and manage shipments',
       route: '/cargo',
       icon: <LocalShipping sx={{ color: '#fff' }} />
-    },
-    {
-      title: 'Escrow Payment',
-      description: 'Manage escrow payments',
-      route: '/escrow',
-      icon: <Payment sx={{ color: '#fff' }} />
     }
   ];
 
   return (
-    <Box sx={{ width: '100%', overflow: 'hidden' }}>
+    <Box sx={{ 
+      width: '100%',
+      minHeight: '100vh',
+      position: 'relative'
+    }}>
+      <HeroSection account={account} />
+      
       <Container 
         maxWidth={false} 
         sx={{ 
-          px: 2, // Reduced padding
-          overflowX: 'hidden' 
+          px: 2,
+          position: 'relative',
+          zIndex: 3,
+          pb: 8,
+          mt: 4
         }}
       >
         <Typography
@@ -61,16 +66,15 @@ const Dashboard = () => {
           Supply Chain Dashboard
         </Typography>
 
-        {/* First Row */}
         <Grid 
           container 
-          spacing={2} // Reduced spacing
+          spacing={2}
           sx={{ 
             mb: 2,
             display: 'flex',
             justifyContent: 'center',
             width: '100%',
-            mx: 0 // Remove margin
+            mx: 0
           }}
         >
           {firstRowItems.map((item, index) => (
@@ -82,7 +86,7 @@ const Dashboard = () => {
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
-                p: 1 // Add padding instead of margin
+                p: 1
               }}
             >
               <DashboardCard {...item} />
@@ -90,7 +94,6 @@ const Dashboard = () => {
           ))}
         </Grid>
 
-        {/* Second Row */}
         <Grid 
           container 
           spacing={2}
@@ -117,6 +120,10 @@ const Dashboard = () => {
             </Grid>
           ))}
         </Grid>
+
+        <Box sx={{ mt: 6 }}>
+          <About />
+        </Box>
       </Container>
     </Box>
   );

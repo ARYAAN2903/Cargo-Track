@@ -11,17 +11,8 @@ import {
   MenuItem,
   Box,
   Alert,
-  CircularProgress,
 } from '@mui/material';
 import { ethers } from 'ethers';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Paper from '@mui/material/Paper';
-import ReceivedOrders from '../tables/ReceivedOrders';
 
 const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatus }) => {
   const [supplierAddress, setSupplierAddress] = useState('');
@@ -29,7 +20,6 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
   const [quantity, setQuantity] = useState('');
   const [pricePerUnit, setPricePerUnit] = useState('');
   const [manufacturer, setManufacturer] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
@@ -41,31 +31,14 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
       if (!contract || !account) return;
 
       try {
-        setLoading(true);
-        
-        // Get manufacturer data from contract
         const manufacturer = await contract.manufacturers(account);
         
         if (manufacturer && manufacturer.isRegistered) {
-          // Get registration event to get authorized parts
-          const eventFilter = contract.filters.ManufacturerRegistered(account);
-          const events = await contract.queryFilter(eventFilter);
-          
-          if (events.length > 0) {
-            const registrationEvent = events[0];
-            const authorizedParts = registrationEvent.args[2].map(part => Number(part));
-            
-            console.log('Manufacturer authorized parts:', authorizedParts);
-
-            setManufacturer({
-              address: account,
-              name: manufacturer.name,
-              authorizedParts: authorizedParts
-            });
-            setError(null);
-          } else {
-            throw new Error('Registration event not found');
-          }
+          setManufacturer({
+            address: account,
+            name: manufacturer.name,
+          });
+          setError(null);
         } else {
           throw new Error('Account not registered as manufacturer');
         }
@@ -74,8 +47,6 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
         console.error('Error fetching manufacturer:', error);
         setError(`Failed to load manufacturer data: ${error.message}`);
         setManufacturer(null);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -94,12 +65,11 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
           const supplier = await contract.suppliers(addr);
           
           if (supplier.isRegistered) {
-            // Get prices using the getSupplierPrices function
             const prices = await contract.getSupplierPrices(addr);
             suppliersList.push({
               address: addr,
               name: supplier.name,
-              partPrices: prices ? prices.map(price => ethers.utils.formatEther(price)) : []
+              partPrices: prices // Prices are already in ETH
             });
           }
         }
@@ -178,10 +148,9 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
     setSelectedSupplier(supplier);
     setSupplierAddress(selectedAddr);
     if (partType !== '') {
-      // Get price directly from supplier's prices array
-      const price = supplier.partPrices[parseInt(partType)];
-      setFixedPrice(price);
-      setPricePerUnit(price);
+      const price = supplier.partPrices[parseInt(partType)]; // Price already in ETH
+      setFixedPrice(price.toString());
+      setPricePerUnit(price.toString());
     }
   };
 
@@ -196,11 +165,11 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
     if (selectedSupplier) {
       try {
         const prices = await contract.getSupplierPrices(selectedSupplier.address);
-        const selectedPrice = prices[Number(selectedPart)];
+        const price = prices[Number(selectedPart)]; // Price already in ETH
         
-        console.log('Selected price:', selectedPrice.toString()); // Debug log
-        setFixedPrice(selectedPrice.toString());
-        setPricePerUnit(selectedPrice.toString());
+        console.log('Selected price:', price); // Debug log
+        setFixedPrice(price.toString());
+        setPricePerUnit(price.toString());
       } catch (error) {
         console.error('Error fetching part price:', error);
         setError('Failed to fetch part price');
@@ -253,46 +222,31 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
     }
   };
 
-  // Update the getAvailableParts function
-  const getAvailableParts = (manufacturerParts, supplierPrices) => {
-    if (!manufacturerParts || !supplierPrices) return [];
+  // Update the getAvailableParts function to handle all part types
+  const getAvailableParts = (supplierPrices) => {
+    if (!supplierPrices) return [];
     
-    // Convert manufacturerParts to numbers and filter only valid part types (0-2)
-    const authorizedParts = manufacturerParts
-      .map(part => Number(part))
-      .filter(part => part >= 0 && part < 3);
-    
-    // Return only the parts that are both authorized and have a price
-    return authorizedParts.filter(part => 
+    // Return all part types (0-2) that have a price set
+    return [0, 1, 2].filter(part => 
       supplierPrices[part] && supplierPrices[part].toString() !== '0'
     );
   };
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
     <>
       <Card sx={{ mb: 4 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>
+          <Typography 
+            variant="h6" 
+            gutterBottom
+            sx={{ color: '#000000' }}
+          >
             Create Order {manufacturer?.name ? `(${manufacturer.name})` : ''}
           </Typography>
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
-            </Alert>
-          )}
-
-          {manufacturer?.authorizedParts && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Your authorized parts: {manufacturer.authorizedParts.map(getPartName).join(', ')}
             </Alert>
           )}
 
@@ -320,7 +274,7 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
                 onChange={handlePartTypeChange}
                 disabled={!selectedSupplier} // Disable if no supplier selected
               >
-                {manufacturer?.authorizedParts?.map((part) => (
+                {selectedSupplier && getAvailableParts(selectedSupplier.partPrices).map((part) => (
                   <MenuItem 
                     key={part.toString()} 
                     value={part.toString()}  // Ensure value is a string
@@ -343,73 +297,37 @@ const CreateOrderCard = ({ contract, cargoContract, account, setTransactionStatu
 
             <TextField
               label="Price Per Unit (ETH)"
-              value={fixedPrice} // Remove Number() conversion
+              value={fixedPrice}
               disabled
               fullWidth
               required
-              helperText="Fixed price set by supplier"
+              helperText="Fixed price set by supplier (ETH)"
             />
 
-            <Button
-              variant="contained"
-              onClick={handleCreateOrder}
-              disabled={!supplierAddress || !partType || !quantity}
-              fullWidth
-            >
-              Create Order
-            </Button>
+            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+              <Button
+                variant="contained"
+                onClick={handleCreateOrder}
+                disabled={!supplierAddress || !partType || !quantity}
+                sx={{
+                  backgroundColor: '#000000',
+                  '&:hover': {
+                    backgroundColor: '#333333',
+                  },
+                  color: '#ffffff',
+                  textTransform: 'none',
+                  fontSize: '1.1rem',
+                  py: 1.5,
+                  px: 4,
+                  width: '200px' // Fixed width for the button
+                }}
+              >
+                Create Order
+              </Button>
+            </Box>
           </Box>
         </CardContent>
       </Card>
-
-      <Card sx={{ mt: 4 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Your Orders
-          </Typography>
-          <TableContainer component={Paper}>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                  <TableCell>Order ID</TableCell>
-                  <TableCell>Supplier Name</TableCell>
-                  <TableCell>Part Type</TableCell>
-                  <TableCell>Quantity</TableCell>
-                  <TableCell>Price/Unit (ETH)</TableCell>
-                  <TableCell>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {manufacturerOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell>{order.id}</TableCell>
-                    <TableCell>{order.supplierName}</TableCell>
-                    <TableCell>{getPartName(order.partType)}</TableCell>
-                    <TableCell>{order.quantity}</TableCell>
-                    <TableCell>
-                      {order.pricePerUnit} ETH
-                    </TableCell>
-                    <TableCell>{getOrderStatus(order.status)}</TableCell>
-                  </TableRow>
-                ))}
-                {manufacturerOrders.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">
-                      No orders found
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </CardContent>
-      </Card>
-
-      <ReceivedOrders 
-        contract={contract}
-        cargoContract={cargoContract}
-        account={account}
-      />
     </>
   );
 };

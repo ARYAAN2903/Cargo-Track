@@ -27,7 +27,7 @@ const OrderStatus = {
   Rejected: 3
 };
 
-const SupplierOrderTable = ({ contract, cargoContract, account }) => {
+const SupplierOrderTable = ({ contract, cargoContract, escrowContract, account }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -36,9 +36,20 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showShipmentModal, setShowShipmentModal] = useState(false);
   const [ordersWithShipments, setOrdersWithShipments] = useState([]);
+  const [showTransactionDetails, setShowTransactionDetails] = useState(false);
+  const [selectedTransactionDetails, setSelectedTransactionDetails] = useState(null);
+
+  const getPartTypeName = (partType) => {
+    switch(Number(partType)) {
+      case 0: return 'Engine';
+      case 1: return 'Transmission';
+      case 2: return 'Brake Assembly';
+      default: return 'Unknown';
+    }
+  };
 
   const fetchOrders = async () => {
-    if (!contract || !account) return;
+    if (!contract || !account || !escrowContract) return;
 
     try {
       const orderCount = await contract.orderCount();
@@ -49,24 +60,58 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
         const order = await contract.orders(i);
         if (order.supplier.toLowerCase() === account.toLowerCase()) {
           try {
-            // Check if shipment exists by trying to get its details
             const shipment = await cargoContract.shipments(i);
-            // If shipment exists and has valid data
             if (shipment && shipment.orderId.toString() !== '0') {
               shipmentsArray.push(i);
             }
-          } catch (err) {
-            console.log(`No shipment found for order ${i}`);
-          }
+            
+            // Get payment details
+            const orderPayment = await escrowContract.orderPayments(i);
+            const shipmentPayment = await escrowContract.payments(i);
+            const pricePerUnit = Number(order.pricePerUnit.toString());
+            const quantity = Number(order.quantity);
+            const totalAmount = pricePerUnit * quantity;
+            const carrierFee = totalAmount * 0.05;
 
-          ordersArray.push({
-            id: i,
-            manufacturer: order.manufacturer,
-            partType: Number(order.partType),
-            quantity: Number(order.quantity),
-            pricePerUnit: order.pricePerUnit.toString(),
-            status: Number(order.status)
-          });
+            // Get balance information if payment is released
+            let balanceInfo = {
+              initialBalance: null,
+              finalBalance: null,
+              difference: null
+            };
+
+            if (orderPayment.released || shipmentPayment.released) {
+              const supplierBalance = await cargoContract.provider.getBalance(account);
+              balanceInfo = {
+                initialBalance: supplierBalance,
+                finalBalance: supplierBalance.add(ethers.utils.parseEther(totalAmount.toString())),
+                difference: ethers.utils.parseEther(totalAmount.toString())
+              };
+            }
+
+            ordersArray.push({
+              id: i,
+              manufacturer: order.manufacturer,
+              partType: Number(order.partType),
+              quantity: quantity,
+              pricePerUnit: pricePerUnit,
+              status: Number(order.status),
+              paymentStatus: {
+                status: (orderPayment.released || shipmentPayment.released) ? 'Received' : 'Pending',
+                supplierAmount: totalAmount,
+                carrierFee: carrierFee,
+                total: totalAmount + carrierFee
+              },
+              balanceInfo: balanceInfo,
+              transactionHash: orderPayment.released || shipmentPayment.released ? 
+                // Get transaction hash from payment events
+                (await escrowContract.queryFilter(
+                  escrowContract.filters.PaymentReleased(order.id)
+                ))[0]?.transactionHash : null
+            });
+          } catch (err) {
+            console.log(`Error processing order ${i}:`, err);
+          }
         }
       }
 
@@ -194,8 +239,10 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
               <TableCell>Part Type</TableCell>
               <TableCell>Quantity</TableCell>
               <TableCell>Price/Unit (ETH)</TableCell>
-              <TableCell>Status</TableCell>
+              <TableCell>Total Value (ETH)</TableCell>
+              <TableCell>Payment Status</TableCell>
               <TableCell>Actions</TableCell>
+              <TableCell>Transaction Details</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -203,50 +250,103 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
               <TableRow key={order.id}>
                 <TableCell>{order.id}</TableCell>
                 <TableCell>{order.manufacturer}</TableCell>
-                <TableCell>{order.partType}</TableCell>
+                <TableCell>{getPartTypeName(order.partType)}</TableCell>
                 <TableCell>{order.quantity}</TableCell>
-                <TableCell>{order.pricePerUnit}</TableCell>
+                <TableCell>{order.pricePerUnit} ETH</TableCell>
                 <TableCell>
-                  {order.status === OrderStatus.Pending && 'Pending'}
-                  {order.status === OrderStatus.Accepted && 'Accepted'}
-                  {order.status === OrderStatus.ReadyForShipment && 'Ready for Shipment'}
-                  {order.status === OrderStatus.Rejected && 'Rejected'}
+                  {(Number(order.pricePerUnit) * order.quantity).toString()} ETH
                 </TableCell>
                 <TableCell>
-                  {order.status === OrderStatus.Pending && (
-                    <>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setModalOpen(true);
-                        }}
-                        sx={{ mr: 1 }}
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        variant="contained"
-                        color="error"
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setModalOpen(true);
-                        }}
-                      >
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                  {(order.status === OrderStatus.Accepted || order.status === OrderStatus.ReadyForShipment) && 
-                    !ordersWithShipments.includes(order.id) && (
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={() => handleShipmentCreation(order)}
-                    >
-                      Create Shipment
-                    </Button>
+                  <Typography
+                    color={order.paymentStatus.status === 'Received' ? 'success.main' : 'warning.main'}
+                  >
+                    {order.paymentStatus.status === 'Received' ? (
+                      <>
+                        Payment Received ✓
+                        <Typography variant="caption" color="text.secondary">
+                          {order.paymentStatus.supplierAmount.toFixed(4)} ETH
+                          {order.carrierFee > 0 && (
+                            <>
+                              <br />
+                              Carrier Fee: {order.paymentStatus.carrierFee.toFixed(4)} ETH
+                            </>
+                          )}
+                        </Typography>
+                      </>
+                    ) : (
+                      'Payment Pending'
+                    )}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  {order.status === OrderStatus.Pending ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
+                        Status: Pending
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setModalOpen(true);
+                          }}
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          variant="contained"
+                          color="error"
+                          size="small"
+                          onClick={() => {
+                            setSelectedOrder(order);
+                            setModalOpen(true);
+                          }}
+                        >
+                          Reject
+                        </Button>
+                      </Box>
+                    </Box>
+                  ) : order.status === OrderStatus.Accepted ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="body2" color="info.main" sx={{ mb: 1 }}>
+                        Status: Accepted ✓
+                      </Typography>
+                      {!ordersWithShipments.includes(order.id) && (
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          onClick={() => handleShipmentCreation(order)}
+                        >
+                          Create Shipment
+                        </Button>
+                      )}
+                    </Box>
+                  ) : order.status === OrderStatus.ReadyForShipment ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="body2" color="success.main" sx={{ mb: 1 }}>
+                        Status: Ready for Shipment
+                      </Typography>
+                      {!ordersWithShipments.includes(order.id) && (
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          onClick={() => handleShipmentCreation(order)}
+                        >
+                          Create Shipment
+                        </Button>
+                      )}
+                    </Box>
+                  ) : (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="body2" color="error.main">
+                        Status: Rejected
+                      </Typography>
+                    </Box>
                   )}
                   {ordersWithShipments.includes(order.id) && (
                     <Typography 
@@ -255,15 +355,41 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
                       sx={{ 
                         display: 'flex', 
                         alignItems: 'center',
-                        gap: 1 
+                        gap: 1,
+                        mt: 1
                       }}
                     >
                       ✓ Shipment Created
                     </Typography>
                   )}
                 </TableCell>
+                <TableCell>
+                  {order.paymentStatus.status === 'Received' ? (
+                    <Button 
+                      variant="outlined" 
+                      size="small"
+                      onClick={() => {
+                        setSelectedTransactionDetails(order);
+                        setShowTransactionDetails(true);
+                      }}
+                    >
+                      View Details
+                    </Button>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      Pending Transaction
+                    </Typography>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
+            {orders.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={10} align="center">
+                  No orders found
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </TableContainer>
@@ -301,7 +427,119 @@ const SupplierOrderTable = ({ contract, cargoContract, account }) => {
           contract={contract}
         />
       )}
+
+      <TransactionDetailsDialog 
+        open={showTransactionDetails}
+        onClose={() => setShowTransactionDetails(false)}
+        details={selectedTransactionDetails}
+      />
     </>
+  );
+};
+
+const TransactionDetailsDialog = ({ open, onClose, details }) => {
+  const [transactionInfo, setTransactionInfo] = useState(null);
+
+  useEffect(() => {
+    const fetchTransactionDetails = async () => {
+      if (details?.transactionHash && window.ethereum) {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        try {
+          // Get transaction details
+          const tx = await provider.getTransaction(details.transactionHash);
+          // Get transaction receipt for gas used
+          const receipt = await provider.getTransactionReceipt(details.transactionHash);
+          // Get block information
+          const block = await provider.getBlock(receipt.blockNumber);
+
+          setTransactionInfo({
+            hash: tx.hash,
+            from: tx.from,
+            to: tx.to,
+            value: ethers.utils.formatEther(tx.value),
+            gasUsed: receipt.gasUsed.toString(),
+            gasPrice: ethers.utils.formatUnits(tx.gasPrice, 'gwei'),
+            blockNumber: receipt.blockNumber,
+            timestamp: new Date(block.timestamp * 1000).toLocaleString(),
+          });
+        } catch (error) {
+          console.error('Error fetching transaction details:', error);
+        }
+      }
+    };
+
+    fetchTransactionDetails();
+  }, [details]);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Transaction Details</DialogTitle>
+      <DialogContent>
+        <Box sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>Payment Information</Typography>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" color="text.secondary">Balance Changes</Typography>
+            <Typography>Initial Balance: {ethers.utils.formatEther(details?.balanceInfo?.initialBalance || '0')} ETH</Typography>
+            <Typography>Amount Received: +{details?.paymentStatus?.supplierAmount?.toFixed(4)} ETH</Typography>
+            <Typography>Final Balance: {ethers.utils.formatEther(details?.balanceInfo?.finalBalance || '0')} ETH</Typography>
+          </Box>
+
+          {transactionInfo && (
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="h6" gutterBottom>Transaction Details</Typography>
+              <Box sx={{ 
+                bgcolor: 'grey.100', 
+                p: 2, 
+                borderRadius: 1,
+                display: 'grid',
+                gap: 1
+              }}>
+                <Typography variant="subtitle2">
+                  Transaction Hash:
+                  <Typography component="span" sx={{ ml: 1, wordBreak: 'break-all' }}>
+                    {transactionInfo.hash}
+                  </Typography>
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  From:
+                  <Typography component="span" sx={{ ml: 1, wordBreak: 'break-all' }}>
+                    {transactionInfo.from}
+                  </Typography>
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  To:
+                  <Typography component="span" sx={{ ml: 1, wordBreak: 'break-all' }}>
+                    {transactionInfo.to}
+                  </Typography>
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  Value: {transactionInfo.value} ETH
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  Gas Used: {transactionInfo.gasUsed}
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  Gas Price: {transactionInfo.gasPrice} Gwei
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  Block Number: {transactionInfo.blockNumber}
+                </Typography>
+
+                <Typography variant="subtitle2">
+                  Timestamp: {transactionInfo.timestamp}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </DialogContent>
+    </Dialog>
   );
 };
 

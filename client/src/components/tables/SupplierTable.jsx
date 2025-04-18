@@ -9,6 +9,7 @@ import {
   Paper,
   Typography
 } from '@mui/material';
+import { ethers } from 'ethers';
 
 const SupplierTable = ({ contract }) => {
   const [suppliers, setSuppliers] = useState([]);
@@ -29,7 +30,7 @@ const SupplierTable = ({ contract }) => {
           suppliersList.push({
             address,
             name: supplier.name,
-            prices: prices // This will be an array of 3 prices
+            prices: prices // Prices are already in ETH, no conversion needed
           });
         }
       }
@@ -44,16 +45,16 @@ const SupplierTable = ({ contract }) => {
   }, [contract]);
 
   return (
-    <TableContainer component={Paper}>
+    <TableContainer component={Paper} sx={{ mt: 4, mb: 4 }}>
       <Typography variant="h6" sx={{ p: 2 }}>Registered Suppliers</Typography>
       <Table>
         <TableHead>
-          <TableRow>
+          <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
             <TableCell>Address</TableCell>
             <TableCell>Name</TableCell>
-            <TableCell>Engine Price</TableCell>
-            <TableCell>Transmission Price</TableCell>
-            <TableCell>Brake Assembly Price</TableCell>
+            <TableCell>Engine Price (ETH)</TableCell>
+            <TableCell>Transmission Price (ETH)</TableCell>
+            <TableCell>Brake Assembly Price (ETH)</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -61,11 +62,18 @@ const SupplierTable = ({ contract }) => {
             <TableRow key={index}>
               <TableCell>{supplier.address}</TableCell>
               <TableCell>{supplier.name}</TableCell>
-              <TableCell>{supplier.prices ? supplier.prices[0].toString() : '-'}</TableCell>
-              <TableCell>{supplier.prices ? supplier.prices[1].toString() : '-'}</TableCell>
-              <TableCell>{supplier.prices ? supplier.prices[2].toString() : '-'}</TableCell>
+              <TableCell>{Number(supplier.prices[0]).toFixed(2)} ETH</TableCell>
+              <TableCell>{Number(supplier.prices[1]).toFixed(2)} ETH</TableCell>
+              <TableCell>{Number(supplier.prices[2]).toFixed(2)} ETH</TableCell>
             </TableRow>
           ))}
+          {suppliers.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={5} align="center">
+                No suppliers registered
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </TableContainer>

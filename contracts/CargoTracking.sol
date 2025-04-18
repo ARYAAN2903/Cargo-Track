@@ -2,33 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
-
-interface IManufacturerSupply {
-    struct Supplier {
-        bool isRegistered;
-        string name;
-        uint256 registrationDate;
-    }
-    
-    function suppliers(address) external view returns (Supplier memory);
-    
-    struct Order {
-        address manufacturer;
-        address supplier;
-        uint8 partType;
-        uint256 quantity;
-        uint256 pricePerUnit;
-        OrderStatus status;
-    }
-    
-    function orders(uint256) external view returns (Order memory);
-    enum OrderStatus {
-        Pending,
-        Accepted,
-        ReadyForShipment,
-        Rejected
-    }
-}
+import "./ManufacturerSupply.sol";
 
 contract CargoTracking {
     enum ShipmentStatus { 
@@ -70,7 +44,7 @@ contract CargoTracking {
     uint256 public shipmentIdCounter;
     address public owner;
 
-    IManufacturerSupply manufacturerSupply;
+    ManufacturerSupply public manufacturerSupply;
 
     uint256 private constant GAS_LIMIT = 500000;  // Increased from 300000
     uint256 private constant MAX_GAS_LIMIT = 750000;  // Increased from 750000
@@ -94,7 +68,7 @@ contract CargoTracking {
 
     constructor(address _manufacturerSupplyAddress) {
         owner = msg.sender;
-        manufacturerSupply = IManufacturerSupply(_manufacturerSupplyAddress);
+        manufacturerSupply = ManufacturerSupply(_manufacturerSupplyAddress);
         shipmentIdCounter = 0;
     }
 
@@ -122,9 +96,17 @@ contract CargoTracking {
         require(bytes(_finalLocation).length > 0, "Final location cannot be empty");
         require(carriers[_carrier].isRegistered, "Carrier not registered");
 
-        IManufacturerSupply.Order memory order = manufacturerSupply.orders(_orderId);
-        require(order.supplier == msg.sender, "Only assigned supplier can create shipment");
-        require(order.status == IManufacturerSupply.OrderStatus.ReadyForShipment, 
+        (
+            address manufacturer,
+            address supplier,
+            uint8 partType,
+            uint256 quantity,
+            uint256 pricePerUnit,
+            ManufacturerSupply.OrderStatus status
+        ) = manufacturerSupply.getOrderDetails(_orderId);
+
+        require(supplier == msg.sender, "Only assigned supplier can create shipment");
+        require(status == ManufacturerSupply.OrderStatus.ReadyForShipment, 
                 "Order not ready for shipment");
 
         unchecked {
@@ -273,5 +255,27 @@ contract CargoTracking {
             shipment.status == ShipmentStatus.InTransit || 
             shipment.status == ShipmentStatus.CustomsProcessing
         );
+    }
+
+    // Add new function to get shipment payment details
+    function getShipmentPaymentInfo(uint256 _shipmentId) external view returns (
+        uint256 orderAmount,
+        uint256 carrierFee
+    ) {
+        Shipment memory shipment = shipments[_shipmentId];
+        
+        (
+            ,
+            ,
+            ,
+            uint256 quantity,
+            uint256 pricePerUnit,
+            
+        ) = manufacturerSupply.getOrderDetails(shipment.orderId);
+        
+        uint256 totalAmount = quantity * pricePerUnit;
+        uint256 fee = (totalAmount * 5) / 100; // 5% carrier fee
+        
+        return (totalAmount, fee);
     }
 }
